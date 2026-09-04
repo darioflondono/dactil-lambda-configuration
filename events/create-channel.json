@@ -1,0 +1,7 @@
+{
+  "version": "2.0",
+  "rawPath": "/api/v1/channels/",
+  "requestContext": { "http": { "method": "POST", "path": "/api/v1/channels/" } },
+  "headers": { "content-type": "application/json" },
+  "body": "{\"user_id\":\"1020304050\",\"type\":\"s3\",\"status\":\"active\",\"provider\":\"openai\",\"model\":\"gpt-4o\",\"config\":{\"bucket\":\"dactil-bucket-de-documentos\",\"user\":\"1020304050\",\"prefix\":\"facturas/\",\"extensions\":\".xml,.pdf\",\"recursive\":true,\"max_files\":100}}"
+}

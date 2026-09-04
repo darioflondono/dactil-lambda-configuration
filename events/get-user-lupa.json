@@ -1,0 +1,5 @@
+{
+  "version": "2.0",
+  "rawPath": "/api/v1/users/1020304050",
+  "requestContext": { "http": { "method": "GET", "path": "/api/v1/users/1020304050" } }
+}

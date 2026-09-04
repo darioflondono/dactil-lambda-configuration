@@ -1,0 +1,7 @@
+{
+  "version": "2.0",
+  "rawPath": "/api/v1/users/",
+  "requestContext": { "http": { "method": "POST", "path": "/api/v1/users/" } },
+  "headers": { "content-type": "application/json" },
+  "body": "{\"identification\":\"1020304050\",\"name\":\"Ana Perez\",\"email\":\"ana@acme.com\",\"role\":\"administrador\",\"company_id\":\"900123456\",\"is_active\":true}"
+}

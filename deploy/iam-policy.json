@@ -1,0 +1,47 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:*:*:*"
+    },
+    {
+      "Sid": "DynamoDbCrud",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Scan",
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/dactil-companies",
+        "arn:aws:dynamodb:*:*:table/dactil-users",
+        "arn:aws:dynamodb:*:*:table/dactil-users/index/*",
+        "arn:aws:dynamodb:*:*:table/dactil-channels"
+      ]
+    },
+    {
+      "Sid": "SendWelcomeEmail",
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ProvisionChannelS3Buckets",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutObject"
+      ],
+      "Resource": ["arn:aws:s3:::*", "arn:aws:s3:::*/*"]
+    }
+  ]
+}

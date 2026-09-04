@@ -1,0 +1,5 @@
+{
+  "version": "2.0",
+  "rawPath": "/api/v1/companies/",
+  "requestContext": { "http": { "method": "GET", "path": "/api/v1/companies/" } }
+}
