@@ -1,7 +1,7 @@
 import { scrypt as _scrypt, randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
 import { promisify } from 'node:util';
 import { config } from './config.js';
-import { unauthorized } from './errors.js';
+import { forbidden, unauthorized } from './errors.js';
 
 const scrypt = promisify(_scrypt);
 
@@ -66,4 +66,12 @@ export function checkAuth(req) {
   const header = req.headers['authorization'] || '';
   if (!header.startsWith('Bearer ')) throw unauthorized('Falta cabecera Authorization: Bearer <token>');
   return verifyJwt(header.slice(7));
+}
+
+/**
+ * Exige que `auth.role` esté en `allowed`. No hace nada si `auth` es null (REQUIRE_AUTH=false,
+ * modo abierto/dev): el gating por rol solo es una restricción real cuando la auth está activa.
+ */
+export function requireRole(auth, allowed) {
+  if (auth && !allowed.includes(auth.role)) throw forbidden(`Requiere rol: ${allowed.join(' o ')}`);
 }

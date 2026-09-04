@@ -1,5 +1,5 @@
 import { TABLES, getItem, putItem, updateItem, deleteItem, scanAll } from '../db.js';
-import { badRequest, conflict, notFound, unauthorized } from '../errors.js';
+import { badRequest, conflict, forbidden, notFound, unauthorized } from '../errors.js';
 import { hashPassword, verifyPassword } from '../auth.js';
 import { sendWelcomeEmail } from '../email.js';
 import { isEmail, nowIso, oneOf, str } from '../util.js';
@@ -24,21 +24,31 @@ function toDto(item) {
 }
 
 // GET /users/   -> [ { identification, name, email, role, company_id } ]
-export async function list() {
+//   implementador ve todos; administrador solo los de su compañía; invitado no tiene acceso.
+export async function list({ auth } = {}) {
+  if (auth?.role === 'invitado') throw forbidden();
   const items = await scanAll(T());
-  return items.map(toDto).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const all = items.map(toDto).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (!auth || auth.role === 'implementador') return all;
+  return all.filter((u) => u.company_id === auth.company_id);
 }
 
 // GET /users/{identification}   (para la lupa del portal)
-export async function get({ params }) {
+export async function get({ params, auth }) {
+  if (auth?.role === 'invitado') throw forbidden();
   const item = await getItem(T(), { identification: params.id });
   if (!item) throw notFound('Usuario no encontrado');
+  if (auth && auth.role === 'administrador' && item.company_id !== auth.company_id) {
+    throw notFound('Usuario no encontrado');
+  }
   return toDto(item);
 }
 
 // POST /users/   <- { identification, name, email, password, role, company_id, is_active }
 //   -> hashea password, marca must_change_password, envía correo de bienvenida
-export async function create({ body }) {
+//   administrador: solo puede crear usuarios de su propia compañía y nunca rol implementador.
+export async function create({ body, auth }) {
+  if (auth?.role === 'invitado') throw forbidden();
   const identification = str(body.identification, 'identification');
   const name = str(body.name, 'name');
   const email = str(body.email, 'email').toLowerCase();
@@ -47,6 +57,11 @@ export async function create({ body }) {
   const role = oneOf(body.role ?? 'invitado', ROLES, 'role');
   const company_id = str(body.company_id, 'company_id');
   const is_active = body.is_active !== false;
+
+  if (auth?.role === 'administrador') {
+    if (company_id !== auth.company_id) throw forbidden('No puedes crear usuarios de otra compañía');
+    if (role === 'implementador') throw forbidden('No puedes asignar el rol implementador');
+  }
 
   // Unicidad: identificación y correo
   if (await getItem(T(), { identification })) throw conflict('Ya existe un usuario con esa identificación');
@@ -86,9 +101,20 @@ export async function create({ body }) {
 }
 
 // PUT /users/{identification}   <- { name?, email?, role?, company_id?, is_active? }   (SIN password)
-export async function update({ params, body }) {
+//   administrador: solo usuarios de su compañía, no puede moverlos de compañía ni asignar implementador.
+export async function update({ params, body, auth }) {
+  if (auth?.role === 'invitado') throw forbidden();
   const current = await getItem(T(), { identification: params.id });
   if (!current) throw notFound('Usuario no encontrado');
+  if (auth?.role === 'administrador') {
+    if (current.company_id !== auth.company_id) throw notFound('Usuario no encontrado');
+    if (body.company_id !== undefined && body.company_id !== auth.company_id) {
+      throw forbidden('No puedes mover el usuario a otra compañía');
+    }
+    if (body.role !== undefined && body.role === 'implementador') {
+      throw forbidden('No puedes asignar el rol implementador');
+    }
+  }
 
   const patch = { updated_at: nowIso() };
   if (body.name !== undefined) patch.name = str(body.name, 'name');
@@ -111,7 +137,12 @@ export async function update({ params, body }) {
 }
 
 // DELETE /users/{identification}
-export async function remove({ params }) {
+export async function remove({ params, auth }) {
+  if (auth?.role === 'invitado') throw forbidden();
+  if (auth?.role === 'administrador') {
+    const current = await getItem(T(), { identification: params.id });
+    if (!current || current.company_id !== auth.company_id) throw notFound('Usuario no encontrado');
+  }
   try {
     await deleteItem(T(), { identification: params.id });
   } catch (e) {

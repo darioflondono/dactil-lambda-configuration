@@ -39,6 +39,12 @@ export async function ensureBucket({ bucket, prefix }) {
     console.log(`[s3] bucket ya existe y es accesible. bucket=${bucket} region=${region}`);
   } catch (e) {
     const status = e?.$metadata?.httpStatusCode;
+    console.log(
+      `[s3] HeadBucket respondio con error. bucket=${bucket} region=${region} status=${status} respuesta=${JSON.stringify(
+        e,
+        Object.getOwnPropertyNames(e)
+      )}`
+    );
     if (status === 404 || e.name === 'NotFound' || e.name === 'NoSuchBucket') {
       console.log(`[s3] bucket no existe, creando. bucket=${bucket} region=${region}`);
       try {
@@ -63,17 +69,29 @@ export async function ensureBucket({ bucket, prefix }) {
         ).catch((e2) => console.warn(`[s3] no se pudo bloquear acceso público de ${bucket}:`, e2.message));
         console.log(`[s3] OK bucket CREADO. bucket=${bucket} region=${region}`);
       } catch (createErr) {
-        console.error(`[s3] ERROR creando bucket. bucket=${bucket} region=${region} name=${createErr.name} message=${createErr.message}`);
+        console.error(
+          `[s3] ERROR creando bucket. bucket=${bucket} region=${region} respuesta=${JSON.stringify(
+            createErr,
+            Object.getOwnPropertyNames(createErr)
+          )}`
+        );
         if (createErr.name === 'BucketAlreadyExists') {
           throw conflict(`El bucket "${bucket}" ya existe en otra cuenta de AWS (los nombres de bucket son globales). Elige otro nombre.`);
         }
         throw createErr;
       }
-    } else if (status === 403 || e.name === 'Forbidden') {
-      console.error(`[s3] ERROR: bucket ${bucket} existe pero pertenece a otra cuenta o sin permisos.`);
+    } else if (status === 403 || e.name === 'Forbidden' || e.name === 'AccessDenied') {
+      console.error(
+        `[s3] ERROR: HeadBucket denegado para ${bucket} (puede ser bucket de otra cuenta O falta de permiso IAM del rol de la Lambda). respuesta=${JSON.stringify(
+          e,
+          Object.getOwnPropertyNames(e)
+        )}`
+      );
       throw conflict(`El bucket "${bucket}" existe pero no pertenece a esta cuenta de AWS (o falta permiso). Elige otro nombre.`);
     } else {
-      console.error(`[s3] ERROR inesperado verificando bucket. bucket=${bucket} name=${e.name} message=${e.message}`);
+      console.error(
+        `[s3] ERROR inesperado verificando bucket. bucket=${bucket} respuesta=${JSON.stringify(e, Object.getOwnPropertyNames(e))}`
+      );
       throw e;
     }
   }

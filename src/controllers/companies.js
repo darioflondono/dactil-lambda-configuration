@@ -1,4 +1,5 @@
 import { TABLES, getItem, putItem, updateItem, deleteItem, scanAll } from '../db.js';
+import { requireRole } from '../auth.js';
 import { conflict, notFound } from '../errors.js';
 import { nowIso, oneOf, str } from '../util.js';
 
@@ -16,21 +17,27 @@ function toDto(item) {
   };
 }
 
-// GET /companies/
-export async function list() {
+// GET /companies/   -> implementador ve todas; administrador/invitado solo la propia.
+export async function list({ auth } = {}) {
   const items = await scanAll(T());
-  return items.map(toDto).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const all = items.map(toDto).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (!auth || auth.role === 'implementador') return all;
+  return all.filter((c) => c.identification === auth.company_id);
 }
 
 // GET /companies/{identification}
-export async function get({ params }) {
+export async function get({ params, auth }) {
   const item = await getItem(T(), { identification: params.id });
   if (!item) throw notFound('Empresa no encontrada');
+  if (auth && auth.role !== 'implementador' && params.id !== auth.company_id) {
+    throw notFound('Empresa no encontrada');
+  }
   return toDto(item);
 }
 
-// POST /companies/   <- { identification, name, status }
-export async function create({ body }) {
+// POST /companies/   <- { identification, name, status }   (solo implementador)
+export async function create({ body, auth }) {
+  requireRole(auth, ['implementador']);
   const identification = str(body.identification, 'identification');
   const name = str(body.name, 'name');
   const status = oneOf(body.status ?? 'active', STATUSES, 'status');
@@ -47,8 +54,9 @@ export async function create({ body }) {
   return toDto(item);
 }
 
-// PUT /companies/{identification}   <- { name?, status?, identification? }
-export async function update({ params, body }) {
+// PUT /companies/{identification}   <- { name?, status?, identification? }   (solo implementador)
+export async function update({ params, body, auth }) {
+  requireRole(auth, ['implementador']);
   const current = await getItem(T(), { identification: params.id });
   if (!current) throw notFound('Empresa no encontrada');
 
@@ -73,8 +81,9 @@ export async function update({ params, body }) {
   return toDto(updated);
 }
 
-// DELETE /companies/{identification}
-export async function remove({ params }) {
+// DELETE /companies/{identification}   (solo implementador)
+export async function remove({ params, auth }) {
+  requireRole(auth, ['implementador']);
   try {
     await deleteItem(T(), { identification: params.id });
   } catch (e) {

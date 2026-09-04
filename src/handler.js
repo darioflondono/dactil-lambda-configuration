@@ -60,15 +60,21 @@ export const handler = async (event) => {
 
   if (req.method === 'OPTIONS') return noContent();
 
+  // Activación de cuenta: el usuario aún no tiene sesión (solo su correo + clave temporal).
+  const isPublicRoute = req.method === 'POST' && req.path === '/auth/set-password';
+
   try {
-    const auth = checkAuth(req);
+    const auth = isPublicRoute ? null : checkAuth(req);
     const { handler: routeHandler, params } = match(req.method, req.path);
     const result = await routeHandler({ ...req, params, auth });
 
     const isCreate = req.method === 'POST' && /^\/(companies|users|channels)$/.test(req.path);
     return ok(result, isCreate ? 201 : 200);
   } catch (e) {
-    if (e instanceof ApiError) return fail(e.status, e.message, e.code);
+    if (e instanceof ApiError) {
+      console.log(`[handler] ApiError -> status=${e.status} code=${e.code} message=${e.message}`);
+      return fail(e.status, e.message, e.code);
+    }
 
     // Errores de DynamoDB / SDK
     if (e.name === 'ResourceNotFoundException') {
