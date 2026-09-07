@@ -174,7 +174,8 @@ $policy = @{ Version = "2012-10-17"; Statement = @(
        "arn:aws:dynamodb:${Region}:${Account}:table/$TblChannels") },
   @{ Sid = "SendWelcomeEmail"; Effect = "Allow"; Action = @("ses:SendEmail"); Resource = "*" },
   @{ Sid = "ProvisionChannelS3Buckets"; Effect = "Allow";
-     Action = @("s3:CreateBucket","s3:ListBucket","s3:GetBucketLocation","s3:PutBucketPublicAccessBlock","s3:PutObject");
+     Action = @("s3:CreateBucket","s3:ListBucket","s3:GetBucketLocation","s3:PutBucketPublicAccessBlock",
+                "s3:PutBucketCors","s3:PutObject");
      Resource = @("arn:aws:s3:::*","arn:aws:s3:::*/*") }) }
 $trustFile  = Join-Path $Tmp "trust.json";  WriteJson $trust  $trustFile
 $policyFile = Join-Path $Tmp "policy.json"; WriteJson $policy $policyFile

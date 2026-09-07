@@ -2,9 +2,11 @@ import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 
 // El correo y el aprovisionamiento de S3 se prueban aparte; aquí los forzamos OFF
-// para no llamar a SES/S3 reales.
+// para no llamar a SES/S3 reales. REQUIRE_AUTH también OFF: estos tests ejercitan
+// el CRUD/la lógica de negocio sin JWT (el scoping por rol/compañía se prueba aparte).
 process.env.EMAIL_ENABLED = 'false';
 process.env.S3_PROVISIONING_ENABLED = 'false';
+process.env.REQUIRE_AUTH = 'false';
 
 // --- DynamoDB en memoria (reemplaza doc.send antes de importar el handler) ---
 const { doc } = await import('../src/db.js');
@@ -162,6 +164,7 @@ test('users: create hashea, GET no expone hash, set-password funciona', async ()
 test('channels CRUD con config por tipo', async () => {
   let r = await call('POST', '/channels/', {
     user_id: '1130',
+    company_id: '80001',
     type: 's3',
     status: 'active',
     provider: 'openai',
@@ -183,6 +186,43 @@ test('channels CRUD con config por tipo', async () => {
 
   r = await call('DELETE', `/channels/${ch.id}`);
   assert.equal(r.statusCode, 200);
+});
+
+test('channels: upload-urls devuelve una entrada por archivo con su key', async () => {
+  let r = await call('POST', '/channels/', {
+    user_id: '1130',
+    company_id: '80007',
+    type: 's3',
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    config: { bucket: 'docs-80007', prefix: 'facturas/' }
+  });
+  const ch = json(r).data;
+
+  r = await call('POST', `/channels/${ch.id}/upload-urls`, {
+    files: [
+      { filename: 'a.pdf', content_type: 'application/pdf' },
+      { filename: 'ñoño r&d.csv' }
+    ]
+  });
+  assert.equal(r.statusCode, 200);
+  const data = json(r).data;
+  assert.equal(data.bucket, 'docs-80007');
+  assert.equal(data.uploads.length, 2);
+  assert.match(data.uploads[0].key, /^80007\/facturas\/\d+-0-a\.pdf$/);
+  assert.match(data.uploads[1].key, /^80007\/facturas\/\d+-1-_o_o_r_d\.csv$/);
+  assert.equal(data.uploads[0].url, null); // S3_PROVISIONING_ENABLED=false -> sin firmar
+  assert.equal(data.uploads[0].content_type, 'application/pdf');
+
+  // sin files -> 400
+  r = await call('POST', `/channels/${ch.id}/upload-urls`, {});
+  assert.equal(r.statusCode, 400);
+
+  // canal inexistente -> 404
+  r = await call('POST', '/channels/nope/upload-urls', { files: [{ filename: 'x' }] });
+  assert.equal(r.statusCode, 404);
+
+  await call('DELETE', `/channels/${ch.id}`);
 });
 
 test('routing: 404 y 405', async () => {

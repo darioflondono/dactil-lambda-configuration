@@ -1,6 +1,6 @@
 import { TABLES, getItem, putItem, updateItem, deleteItem, scanAll } from '../db.js';
-import { forbidden, notFound } from '../errors.js';
-import { ensureBucket } from '../s3.js';
+import { badRequest, forbidden, notFound } from '../errors.js';
+import { ensureBucket, presignUploads } from '../s3.js';
 import { nowIso, oneOf, str, toArray, toInt, uuid } from '../util.js';
 
 const T = () => TABLES.channels;
@@ -86,7 +86,8 @@ export async function create({ body, auth }) {
   const cfg = normalizeConfig(type, body.config);
 
   // Canal S3: provisiona de verdad el bucket en AWS antes de guardar el canal,
-  // para que al entrar a la consola de S3 ya esté configurado.
+  // para que al entrar a la consola de S3 ya esté configurado. Los documentos se
+  // suben aparte, directo a S3 con URL prefirmada (POST /channels/{id}/upload-urls).
   let bucketStatus;
   if (type === 's3') {
     bucketStatus = await ensureBucket({ bucket: cfg.bucket, prefix: cfg.prefix });
@@ -106,7 +107,10 @@ export async function create({ body, auth }) {
     updated_at: ts
   };
   await putItem(T(), item);
-  console.log(`[channels.create] canal=${item.id} type=${type}` + (bucketStatus ? ` bucket=${bucketStatus.bucket} bucket_creado=${bucketStatus.created}` : ''));
+  console.log(
+    `[channels.create] canal=${item.id} type=${type}` +
+      (bucketStatus ? ` bucket=${bucketStatus.bucket} bucket_creado=${bucketStatus.created}` : '')
+  );
 
   return { ...toDto(item), bucket_status: bucketStatus ?? null };
 }
@@ -143,9 +147,42 @@ export async function update({ params, body, auth }) {
   }
 
   const updated = await updateItem(T(), { id: params.id }, patch);
-  console.log(`[channels.update] canal=${params.id} type=${type}` + (bucketStatus ? ` bucket=${bucketStatus.bucket} bucket_creado=${bucketStatus.created}` : ''));
+  console.log(
+    `[channels.update] canal=${params.id} type=${type}` +
+      (bucketStatus ? ` bucket=${bucketStatus.bucket} bucket_creado=${bucketStatus.created}` : '')
+  );
 
   return { ...toDto(updated), bucket_status: bucketStatus ?? null };
+}
+
+// POST /channels/{id}/upload-urls   <- { files: [{ filename, content_type? }] }
+//   Devuelve una URL prefirmada (PUT) por archivo para subir los documentos DIRECTO a S3,
+//   sin pasar por API Gateway/Lambda (evita el límite de 10 MB de payload). El navegador
+//   hace `PUT <url>` con el archivo como body y la cabecera Content-Type que se indicó aquí.
+const MAX_UPLOAD_FILES = 50;
+
+export async function uploadUrls({ params, body, auth }) {
+  if (auth?.role === 'invitado') throw forbidden();
+  const channel = await getItem(T(), { id: params.id });
+  if (!channel) throw notFound('Canal no encontrado');
+  if (auth?.role === 'administrador' && channel.company_id !== auth.company_id) {
+    throw notFound('Canal no encontrado');
+  }
+  if (channel.type !== 's3') throw badRequest('El canal no es de tipo s3');
+
+  const files = Array.isArray(body.files) ? body.files : [];
+  if (files.length === 0) throw badRequest("Se requiere 'files': [{ filename, content_type }]");
+  if (files.length > MAX_UPLOAD_FILES) throw badRequest(`Máximo ${MAX_UPLOAD_FILES} archivos por lote`);
+  for (const f of files) str(f?.filename, 'files[].filename');
+
+  const bucket = str(channel.config?.bucket, 'config.bucket');
+  const prefix = channel.config?.prefix ?? '';
+
+  const bucketStatus = await ensureBucket({ bucket, prefix });
+  const uploads = await presignUploads({ bucket, company_id: channel.company_id, prefix, files });
+
+  console.log(`[channels.upload-urls] canal=${params.id} bucket=${bucket} archivos=${uploads.length}`);
+  return { bucket, prefix, bucket_status: bucketStatus ?? null, uploads };
 }
 
 // DELETE /channels/{id}

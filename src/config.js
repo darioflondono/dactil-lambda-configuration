@@ -42,7 +42,12 @@ export const config = {
     // true (default): al crear/editar un canal tipo "s3" se crea de verdad el bucket
     // en AWS (si no existe). false: solo se guarda la configuración (útil en dev sin
     // credenciales AWS o en tests).
-    provisioningEnabled: bool(process.env.S3_PROVISIONING_ENABLED, true)
+    provisioningEnabled: bool(process.env.S3_PROVISIONING_ENABLED, true),
+    // Región del bucket de documentos / Knowledge Base (S3 Vectors). Puede ser
+    // DISTINTA de `region` (que es la de DynamoDB/la propia Lambda): es us-east-2
+    // porque la cuota on-demand de embeddings de Bedrock está en 0 en us-east-1 y
+    // us-west-2 para esta cuenta y no es ajustable (ver dactil-lambda-chat/src/config.py).
+    region: process.env.S3_REGION || 'us-east-2'
   },
   email: {
     enabled: bool(process.env.EMAIL_ENABLED, false),

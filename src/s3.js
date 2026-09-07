@@ -4,7 +4,7 @@ import { conflict } from './errors.js';
 let s3ClientPromise;
 async function getS3() {
   if (!s3ClientPromise) {
-    s3ClientPromise = import('@aws-sdk/client-s3').then(({ S3Client }) => new S3Client({ region: config.region }));
+    s3ClientPromise = import('@aws-sdk/client-s3').then(({ S3Client }) => new S3Client({ region: config.s3.region }));
   }
   return s3ClientPromise;
 }
@@ -18,7 +18,7 @@ async function getS3() {
  * @returns {Promise<{created:boolean, bucket:string, region:string, prefixCreated:boolean}>}
  */
 export async function ensureBucket({ bucket, prefix }) {
-  const region = config.region;
+  const region = config.s3.region;
 
   if (!config.s3.provisioningEnabled) {
     console.log(`[s3] S3_PROVISIONING_ENABLED=false -> no se toca AWS. bucket=${bucket}`);
@@ -30,6 +30,7 @@ export async function ensureBucket({ bucket, prefix }) {
     HeadBucketCommand,
     CreateBucketCommand,
     PutPublicAccessBlockCommand,
+    PutBucketCorsCommand,
     PutObjectCommand
   } = await import('@aws-sdk/client-s3');
 
@@ -96,6 +97,31 @@ export async function ensureBucket({ bucket, prefix }) {
     }
   }
 
+  // CORS del bucket: el portal sube los documentos DIRECTO a S3 con una URL prefirmada
+  // (PUT desde el navegador), así el archivo no pasa por API Gateway/Lambda (límite 10 MB).
+  // Sin esta config el navegador bloquea ese PUT. Idempotente.
+  try {
+    await s3.send(
+      new PutBucketCorsCommand({
+        Bucket: bucket,
+        CORSConfiguration: {
+          CORSRules: [
+            {
+              AllowedMethods: ['PUT', 'GET', 'HEAD'],
+              AllowedOrigins: ['*'],
+              AllowedHeaders: ['*'],
+              ExposeHeaders: ['ETag'],
+              MaxAgeSeconds: 3000
+            }
+          ]
+        }
+      })
+    );
+    console.log(`[s3] CORS del bucket configurado (PUT directo desde el navegador). bucket=${bucket}`);
+  } catch (e) {
+    console.warn(`[s3] no se pudo configurar CORS del bucket. bucket=${bucket} error=${e.message}`);
+  }
+
   let prefixCreated = false;
   const folderKey = (prefix || '').trim();
   if (folderKey) {
@@ -111,4 +137,63 @@ export async function ensureBucket({ bucket, prefix }) {
   }
 
   return { created, bucket, region, prefixCreated };
+}
+
+/** Nombre de archivo seguro para usar como parte de una key de S3. */
+function sanitizeFilename(name) {
+  const base = String(name || '').split(/[/\\]/).pop() || 'archivo';
+  const safe = base.replace(/[^A-Za-z0-9_.\-]/g, '_');
+  return safe.slice(-150) || 'archivo';
+}
+
+/** Segundos de validez de cada URL prefirmada de subida. */
+const PRESIGN_EXPIRES_IN = 900; // 15 min
+
+/**
+ * Genera una URL prefirmada (PUT) por archivo para que el navegador suba los documentos
+ * DIRECTO a S3, bajo {company_id}/[{prefix}/]{timestamp}-{archivo}. El archivo NO pasa por
+ * API Gateway/Lambda, así se evita el límite de 10 MB de payload (ver el 413 que devolvía
+ * la subida en base64). Mismo esquema {bucket}/{company} que usa dactil-lambda-chat para
+ * sincronizar cada empresa por separado hacia el Knowledge Base (knowledge_base_service.py).
+ *
+ * `files`: [{ filename, content_type? }].
+ *
+ * @returns {Promise<Array<{filename:string, key:string, url:string|null, content_type:string, expires_in:number, skipped?:boolean}>>}
+ */
+export async function presignUploads({ bucket, company_id, prefix, files }) {
+  if (!Array.isArray(files) || files.length === 0) return [];
+
+  const folder = (prefix || '').trim().replace(/^\/+|\/+$/g, '');
+  const stamp = Date.now();
+
+  const build = (file, i) => {
+    const filename = file?.filename || 'archivo';
+    const content_type = file?.content_type || 'application/octet-stream';
+    const key = [company_id, folder, `${stamp}-${i}-${sanitizeFilename(filename)}`].filter(Boolean).join('/');
+    return { filename, content_type, key };
+  };
+
+  // En dev/tests (S3_PROVISIONING_ENABLED=false) no se firma nada: se devuelven las keys
+  // que se usarían, con url=null, para poder ejercitar el endpoint sin credenciales AWS.
+  if (!config.s3.provisioningEnabled) {
+    console.log(`[s3] S3_PROVISIONING_ENABLED=false -> URLs prefirmadas omitidas. bucket=${bucket}`);
+    return files.map((f, i) => ({ ...build(f, i), url: null, expires_in: PRESIGN_EXPIRES_IN, skipped: true }));
+  }
+
+  const s3 = await getS3();
+  const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+  const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+
+  const results = [];
+  for (let i = 0; i < files.length; i++) {
+    const { filename, content_type, key } = build(files[i], i);
+    const url = await getSignedUrl(
+      s3,
+      new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: content_type }),
+      { expiresIn: PRESIGN_EXPIRES_IN }
+    );
+    console.log(`[s3] URL prefirmada generada. bucket=${bucket} key=${key}`);
+    results.push({ filename, key, url, content_type, expires_in: PRESIGN_EXPIRES_IN });
+  }
+  return results;
 }

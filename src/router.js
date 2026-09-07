@@ -21,6 +21,7 @@ const ROUTES = [
 
   ['GET', /^\/channels$/, channels.list],
   ['POST', /^\/channels$/, channels.create],
+  ['POST', /^\/channels\/(?<id>[^/]+)\/upload-urls$/, channels.uploadUrls],
   ['GET', /^\/channels\/(?<id>[^/]+)$/, channels.get],
   ['PUT', /^\/channels\/(?<id>[^/]+)$/, channels.update],
   ['DELETE', /^\/channels\/(?<id>[^/]+)$/, channels.remove]

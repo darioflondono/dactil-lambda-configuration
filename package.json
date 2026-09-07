@@ -4,7 +4,9 @@
   "description": "Lambda Node.js — CRUD de companies / users / channels sobre DynamoDB (+ set-password y correo de bienvenida). Backend del portal dactil-llm-chat-portal.",
   "type": "module",
   "main": "src/handler.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "node --test tests/*.test.js",
     "local": "node scripts/local-server.js",
@@ -12,8 +14,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.658.0",
-    "@aws-sdk/lib-dynamodb": "^3.658.0",
+    "@aws-sdk/client-s3": "^3.658.0",
     "@aws-sdk/client-sesv2": "^3.658.0",
-    "@aws-sdk/client-s3": "^3.658.0"
+    "@aws-sdk/lib-dynamodb": "^3.658.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0"
   }
 }
