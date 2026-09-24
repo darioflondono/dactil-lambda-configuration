@@ -133,6 +133,17 @@ test('users: create hashea, GET no expone hash, set-password funciona', async ()
   assert.equal(dto.must_change_password, true);
   assert.equal(dto.password_hash, undefined);
   assert.equal(dto.email_sent, false); // EMAIL_ENABLED=false
+  assert.equal(dto.email_status, 'DISABLED');
+  assert.ok(dto.email_hint);
+
+  // reenvío del correo de bienvenida: nueva temporal, sigue exigiendo cambio de contraseña
+  r = await call('POST', '/users/1130/resend-welcome', { password: 'Temp12345' });
+  assert.equal(r.statusCode, 200);
+  assert.equal(json(r).data.email_status, 'DISABLED');
+  assert.equal(json(r).data.must_change_password, true);
+  assert.equal(json(r).data.password_hash, undefined);
+  r = await call('POST', '/users/no-existe/resend-welcome', {});
+  assert.equal(r.statusCode, 404);
 
   // rol inválido
   r = await call('POST', '/users/', { identification: 'x', name: 'x', email: 'x@y.com', password: 'p', role: 'root', company_id: '1' });
@@ -221,6 +232,28 @@ test('channels: upload-urls devuelve una entrada por archivo con su key', async 
   // canal inexistente -> 404
   r = await call('POST', '/channels/nope/upload-urls', { files: [{ filename: 'x' }] });
   assert.equal(r.statusCode, 404);
+
+  await call('DELETE', `/channels/${ch.id}`);
+});
+
+test('channels: prefix que ya trae la empresa no la repite en la ruta', async () => {
+  const { channelFolder } = await import('../src/s3.js');
+  assert.equal(channelFolder('80007777', '80007777/gestion'), '80007777/gestion');
+  assert.equal(channelFolder('80007777', '/80007777/gestion/'), '80007777/gestion');
+  assert.equal(channelFolder('80007777', 'gestion'), '80007777/gestion');
+  assert.equal(channelFolder('80007777', ''), '80007777');
+
+  let r = await call('POST', '/channels/', {
+    user_id: '1130',
+    company_id: '80007777',
+    type: 's3',
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    config: { bucket: 'dactil-bucket-de-documentos', prefix: '80007777/gestion' }
+  });
+  const ch = json(r).data;
+  r = await call('POST', `/channels/${ch.id}/upload-urls`, { files: [{ filename: 'renta.pdf' }] });
+  assert.match(json(r).data.uploads[0].key, /^80007777\/gestion\/\d+-0-renta\.pdf$/);
 
   await call('DELETE', `/channels/${ch.id}`);
 });

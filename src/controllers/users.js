@@ -1,6 +1,6 @@
 import { TABLES, getItem, putItem, updateItem, deleteItem, scanAll } from '../db.js';
 import { badRequest, conflict, forbidden, notFound, unauthorized } from '../errors.js';
-import { hashPassword, verifyPassword } from '../auth.js';
+import { hashPassword, randomTempPassword, verifyPassword } from '../auth.js';
 import { sendWelcomeEmail } from '../email.js';
 import { isEmail, nowIso, oneOf, str } from '../util.js';
 
@@ -84,20 +84,32 @@ export async function create({ body, auth }) {
 
   // El envío del correo no debe tumbar el alta: sendWelcomeEmail nunca lanza.
   const emailResult = await sendWelcomeEmail({ to: email, name, tempPassword });
-  console.log(
-    `[users.create] usuario=${identification} email=${email} ` +
-      `correo_enviado=${emailResult.sent}` +
-      (emailResult.messageId ? ` messageId=${emailResult.messageId}` : '') +
-      (emailResult.reason ? ` motivo=${emailResult.reason}` : '') +
-      (emailResult.error ? ` error="${emailResult.error}"` : '')
+  logUserEmail('users.create', identification, email, emailResult);
+
+  return { ...toDto(item), ...emailFields(emailResult) };
+}
+
+// POST /users/{identification}/resend-welcome   <- { password? }
+//   Genera (o usa la enviada) una nueva contraseña temporal, la guarda y reenvía el correo de bienvenida.
+export async function resendWelcome({ params, body, auth }) {
+  if (auth?.role === 'invitado') throw forbidden();
+  const current = await getItem(T(), { identification: params.id });
+  if (!current) throw notFound('Usuario no encontrado');
+  if (auth?.role === 'administrador' && current.company_id !== auth.company_id) {
+    throw notFound('Usuario no encontrado');
+  }
+
+  const tempPassword = body?.password !== undefined ? str(body.password, 'password') : randomTempPassword();
+  const updated = await updateItem(
+    T(),
+    { identification: params.id },
+    { password_hash: await hashPassword(tempPassword), must_change_password: true, updated_at: nowIso() }
   );
 
-  return {
-    ...toDto(item),
-    email_sent: emailResult.sent,
-    email_message_id: emailResult.messageId ?? null,
-    activation_link: emailResult.link
-  };
+  const emailResult = await sendWelcomeEmail({ to: current.email, name: current.name, tempPassword });
+  logUserEmail('users.resendWelcome', params.id, current.email, emailResult);
+
+  return { ...toDto(updated), ...emailFields(emailResult) };
 }
 
 // PUT /users/{identification}   <- { name?, email?, role?, company_id?, is_active? }   (SIN password)
@@ -180,6 +192,26 @@ export async function setPassword({ body }) {
 }
 
 // ─────────────────────────────────────────── helpers
+/** Campos del resultado del correo que se devuelven en la respuesta del API. */
+function emailFields(r) {
+  return {
+    email_sent: r.sent,
+    email_status: r.status,
+    email_message_id: r.messageId ?? null,
+    email_error: r.error ?? null,
+    email_hint: r.hint ?? null,
+    activation_link: r.link
+  };
+}
+
+function logUserEmail(op, identification, email, r) {
+  console.log(
+    `[${op}] usuario=${identification} email=${email} correo=${r.status}` +
+      (r.messageId ? ` messageId=${r.messageId}` : '') +
+      (r.error ? ` error="${r.error}"` : '')
+  );
+}
+
 /** Busca por correo con Scan+Filter (tabla de usuarios pequeña).
  *  Para escala, crea un GSI 'by-email' y sustituye por Query. */
 async function findByEmail(email) {

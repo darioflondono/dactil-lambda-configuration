@@ -71,8 +71,8 @@ Copia `.env.example` a `.env`. Se empaqueta en el zip y se carga al arrancar
 | `JWT_SECRET` | | secreto para validar el JWT |
 | `PASSWORD_PEPPER` | | pimienta opcional del hash scrypt |
 | `EMAIL_ENABLED` | `true` | `true` envía el correo de bienvenida por SES; `false` solo loguea el enlace |
-| `SES_REGION` / `EMAIL_FROM` / `EMAIL_FROM_NAME` | `us-east-1` / `gestion.dactil@gmail.com` / `Dactil` | remitente verificado en SES (`deploy/setup-ses.sh`) |
-| `PORTAL_BASE_URL` | `http://localhost:4200` | base del enlace `/activar?email=...` |
+| `SES_REGION` / `EMAIL_FROM` / `EMAIL_FROM_NAME` | `us-east-1` / `gestion.dactil@dactil.com.co` / `Dactil` | remitente verificado en SES (`deploy/setup-ses.sh`) |
+| `PORTAL_BASE_URL` | `https://www.dactil.com.co` | base del enlace `/activar?email=...` |
 | `S3_PROVISIONING_ENABLED` | `true` | `true` crea/verifica el bucket real en S3 al guardar un canal `s3`; `false` solo guarda la config |
 | `CORS_ORIGIN` | `*` | `Access-Control-Allow-Origin` |
 
@@ -118,7 +118,7 @@ con proxy `ANY /{proxy+}` → **smoke test**.
 
 ```bash
 ./deploy/setup-dynamodb.sh      # crea dactil-companies / dactil-users / dactil-channels
-./deploy/setup-ses.sh           # verifica EMAIL_FROM en SES (gestion.dactil@gmail.com)
+./deploy/setup-ses.sh           # verifica EMAIL_FROM en SES (gestion.dactil@dactil.com.co)
 ./deploy/build.sh               # -> dist/function.zip   (o  deploy\build.ps1  en Windows)
 ./deploy/setup-iam.sh           # rol dactil-lambda-configuration-role + iam-policy.json
 ./deploy/deploy.sh              # crea/actualiza la función
@@ -145,11 +145,11 @@ y el enlace `/activar?email=...` mediante **Amazon SES v2** (`src/email.js`).
 **Puesta a punto:**
 
 1. `./deploy/setup-ses.sh` — registra y pide verificación de `EMAIL_FROM`
-   (`gestion.dactil@gmail.com`). Abre el correo que manda AWS y confirma el enlace.
+   (`gestion.dactil@dactil.com.co`). Abre el correo que manda AWS y confirma el enlace.
 2. Si la cuenta SES está en **sandbox** (por defecto), también hay que verificar cada
    destinatario: `VERIFY_RECIPIENTS="correo@dominio.com" ./deploy/setup-ses.sh`.
    Para enviar a cualquiera, pide *production access* en la consola de SES.
-3. `.env`: `EMAIL_ENABLED=true`, `EMAIL_FROM=gestion.dactil@gmail.com`, `SES_REGION=us-east-1`.
+3. `.env`: `EMAIL_ENABLED=true`, `EMAIL_FROM=gestion.dactil@dactil.com.co`, `SES_REGION=us-east-1`.
 4. El rol de la Lambda ya trae `ses:SendEmail` (`deploy/iam-policy.json`).
 
 **Probar el envío** (local, sin crear usuario):
@@ -162,7 +162,7 @@ AWS_PROFILE=dactil npm run send-test-email -- destinatario@dominio.com "Nombre A
 `/aws/lambda/dactil-lambda-configuration`:
 
 ```
-[email] OK correo de bienvenida ENVIADO por SES. to=... from=gestion.dactil@gmail.com region=us-east-1 messageId=010f0193... ms=412
+[email] OK correo de bienvenida ENVIADO por SES. to=... from=gestion.dactil@dactil.com.co region=us-east-1 messageId=010f0193... ms=412
 [users.create] usuario=1020304050 email=ana@acme.com correo_enviado=true messageId=010f0193...
 ```
 

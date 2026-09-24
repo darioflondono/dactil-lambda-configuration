@@ -54,7 +54,7 @@ export const config = {
     sesRegion: process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1',
     from: process.env.EMAIL_FROM || 'no-reply@dactil.example',
     fromName: process.env.EMAIL_FROM_NAME || 'Dáctil',
-    portalBaseUrl: (process.env.PORTAL_BASE_URL || 'http://localhost:4200').replace(/\/+$/, '')
+    portalBaseUrl: (process.env.PORTAL_BASE_URL || 'https://www.dactil.com.co').replace(/\/+$/, '')
   },
   corsOrigin: process.env.CORS_ORIGIN || '*'
 };

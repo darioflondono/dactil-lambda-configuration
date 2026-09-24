@@ -10,14 +10,29 @@ async function getS3() {
 }
 
 /**
+ * Ruta única de los documentos de un canal dentro del bucket: {company_id}/{carpeta}.
+ * El portal guarda el prefix del canal ya con la empresa ("80007777/gestion") o sin ella
+ * ("gestion"); en ambos casos se quita la empresa del inicio para no repetirla
+ * (antes quedaban 80007777/gestion/ vacía y los archivos en 80007777/80007777/gestion/).
+ */
+export function channelFolder(company_id, prefix) {
+  const segments = String(prefix || '')
+    .split('/')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (segments[0] === String(company_id)) segments.shift();
+  return [company_id, ...segments].filter(Boolean).join('/');
+}
+
+/**
  * Garantiza que el bucket S3 de un canal exista de verdad en AWS (lo crea si falta)
- * y, si se dio un prefijo, deja el "folder" visible en la consola (objeto marcador
- * con Key terminada en "/"). Idempotente: si el bucket ya existe y es nuestro, no
+ * y, si se dio una carpeta (ver channelFolder), la deja visible en la consola (objeto
+ * marcador con Key terminada en "/"). Idempotente: si el bucket ya existe y es nuestro, no
  * hace nada más que verificarlo.
  *
  * @returns {Promise<{created:boolean, bucket:string, region:string, prefixCreated:boolean}>}
  */
-export async function ensureBucket({ bucket, prefix }) {
+export async function ensureBucket({ bucket, folder }) {
   const region = config.s3.region;
 
   if (!config.s3.provisioningEnabled) {
@@ -123,7 +138,7 @@ export async function ensureBucket({ bucket, prefix }) {
   }
 
   let prefixCreated = false;
-  const folderKey = (prefix || '').trim();
+  const folderKey = (folder || '').trim();
   if (folderKey) {
     const key = folderKey.endsWith('/') ? folderKey : `${folderKey}/`;
     try {
@@ -151,7 +166,7 @@ const PRESIGN_EXPIRES_IN = 900; // 15 min
 
 /**
  * Genera una URL prefirmada (PUT) por archivo para que el navegador suba los documentos
- * DIRECTO a S3, bajo {company_id}/[{prefix}/]{timestamp}-{archivo}. El archivo NO pasa por
+ * DIRECTO a S3, bajo {company_id}/[{carpeta}/]{timestamp}-{archivo} (ver channelFolder). El archivo NO pasa por
  * API Gateway/Lambda, así se evita el límite de 10 MB de payload (ver el 413 que devolvía
  * la subida en base64). Mismo esquema {bucket}/{company} que usa dactil-lambda-chat para
  * sincronizar cada empresa por separado hacia el Knowledge Base (knowledge_base_service.py).
@@ -163,13 +178,13 @@ const PRESIGN_EXPIRES_IN = 900; // 15 min
 export async function presignUploads({ bucket, company_id, prefix, files }) {
   if (!Array.isArray(files) || files.length === 0) return [];
 
-  const folder = (prefix || '').trim().replace(/^\/+|\/+$/g, '');
+  const folder = channelFolder(company_id, prefix);
   const stamp = Date.now();
 
   const build = (file, i) => {
     const filename = file?.filename || 'archivo';
     const content_type = file?.content_type || 'application/octet-stream';
-    const key = [company_id, folder, `${stamp}-${i}-${sanitizeFilename(filename)}`].filter(Boolean).join('/');
+    const key = `${folder}/${stamp}-${i}-${sanitizeFilename(filename)}`;
     return { filename, content_type, key };
   };
 

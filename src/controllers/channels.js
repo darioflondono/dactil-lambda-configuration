@@ -1,6 +1,6 @@
 import { TABLES, getItem, putItem, updateItem, deleteItem, scanAll } from '../db.js';
 import { badRequest, forbidden, notFound } from '../errors.js';
-import { ensureBucket, presignUploads } from '../s3.js';
+import { channelFolder, ensureBucket, presignUploads } from '../s3.js';
 import { nowIso, oneOf, str, toArray, toInt, uuid } from '../util.js';
 
 const T = () => TABLES.channels;
@@ -90,7 +90,7 @@ export async function create({ body, auth }) {
   // suben aparte, directo a S3 con URL prefirmada (POST /channels/{id}/upload-urls).
   let bucketStatus;
   if (type === 's3') {
-    bucketStatus = await ensureBucket({ bucket: cfg.bucket, prefix: cfg.prefix });
+    bucketStatus = await ensureBucket({ bucket: cfg.bucket, folder: channelFolder(company_id, cfg.prefix) });
   }
 
   const ts = nowIso();
@@ -142,7 +142,11 @@ export async function update({ params, body, auth }) {
   if (body.config !== undefined || body.type !== undefined) {
     patch.config = normalizeConfig(type, body.config ?? current.config);
     if (type === 's3') {
-      bucketStatus = await ensureBucket({ bucket: patch.config.bucket, prefix: patch.config.prefix });
+      const company_id = patch.company_id ?? current.company_id;
+      bucketStatus = await ensureBucket({
+        bucket: patch.config.bucket,
+        folder: channelFolder(company_id, patch.config.prefix)
+      });
     }
   }
 
@@ -178,7 +182,7 @@ export async function uploadUrls({ params, body, auth }) {
   const bucket = str(channel.config?.bucket, 'config.bucket');
   const prefix = channel.config?.prefix ?? '';
 
-  const bucketStatus = await ensureBucket({ bucket, prefix });
+  const bucketStatus = await ensureBucket({ bucket, folder: channelFolder(channel.company_id, prefix) });
   const uploads = await presignUploads({ bucket, company_id: channel.company_id, prefix, files });
 
   console.log(`[channels.upload-urls] canal=${params.id} bucket=${bucket} archivos=${uploads.length}`);

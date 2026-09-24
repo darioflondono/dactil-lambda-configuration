@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Configura Amazon SES v2 para el correo de bienvenida.
-#  - Verifica la identidad del remitente (EMAIL_FROM del .env, por defecto gestion.dactil@gmail.com).
+#  - Verifica la identidad del remitente (EMAIL_FROM del .env, por defecto gestion.dactil@dactil.com.co).
 #  - Opcional: verifica destinatarios (necesario mientras la cuenta SES este en sandbox).
 #  - Muestra el estado de sandbox / cuota de envio.
 #
@@ -17,7 +17,7 @@ env_get() {
 }
 
 REGION="${REGION:-$(env_get SES_REGION)}"; REGION="${REGION:-us-east-1}"
-SENDER="${SENDER:-$(env_get EMAIL_FROM)}"; SENDER="${SENDER:-gestion.dactil@gmail.com}"
+SENDER="${SENDER:-$(env_get EMAIL_FROM)}"; SENDER="${SENDER:-gestion.dactil@dactil.com.co}"
 
 echo ">> SES region : $REGION"
 echo ">> remitente  : $SENDER"

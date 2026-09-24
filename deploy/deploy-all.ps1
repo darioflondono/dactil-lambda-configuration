@@ -124,7 +124,9 @@ $EmailEnabled = Get-EnvVal $DotEnv "EMAIL_ENABLED"
 $EmailFrom    = Get-EnvVal $DotEnv "EMAIL_FROM"
 $SesRegion    = Get-EnvVal $DotEnv "SES_REGION"; if (-not $SesRegion) { $SesRegion = $Region }
 if ($EmailEnabled -match '^(1|true|yes|on)$' -and $EmailFrom) {
-  $idJson = $null
+  # Si el dominio del remitente ya es identidad en SES, cualquier direccion @dominio sirve.
+  $EmailDomain = ($EmailFrom -split '@')[-1]
+  if (TryAws sesv2 get-email-identity --email-identity $EmailDomain --region $SesRegion) { $EmailFrom = $EmailDomain }
   $idExists = TryAws sesv2 get-email-identity --email-identity $EmailFrom --region $SesRegion
   if (-not $idExists) {
     Write-Host "   registrando identidad de remitente $EmailFrom"

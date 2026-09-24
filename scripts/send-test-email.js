@@ -31,5 +31,6 @@ if (result.sent) {
   process.exit(0);
 } else {
   console.error(`[test] NO enviado. motivo=${result.reason || 'desconocido'} error=${result.error || '-'}`);
+  if (result.hint) console.error(`[test] qué hacer: ${result.hint}`);
   process.exit(2);
 }

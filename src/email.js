@@ -11,19 +11,53 @@ async function getSes() {
 }
 
 /**
+ * Traza de una línea en CloudWatch con el resultado del envío:
+ *   [email] SENT|FAILED|DISABLED {"status":...,"to":...,"error":...,"hint":...}
+ * En la consola de CloudWatch se filtra con el texto "[email] FAILED".
+ */
+function logEmail(status, fields) {
+  const line = `[email] ${status} ${JSON.stringify({ status, ...fields })}`;
+  if (status === 'FAILED') console.error(line);
+  else console.log(line);
+}
+
+/** Traduce los errores comunes de SES a una indicación accionable. */
+function hintFor(e) {
+  const msg = e?.message || '';
+  if (e?.name === 'MessageRejected' && /not verified/i.test(msg)) {
+    return /failed the check/i.test(msg) && !msg.includes(config.email.from)
+      ? 'SES está en sandbox: el destinatario no está verificado. Verifícalo en SES o solicita acceso a producción.'
+      : `El remitente ${config.email.from} no está verificado en SES (${config.email.sesRegion}).`;
+  }
+  if (e?.name === 'AccessDeniedException') return 'El rol de la Lambda no tiene permiso ses:SendEmail.';
+  if (e?.name === 'AccountSuspendedException' || e?.name === 'SendingPausedException') {
+    return 'El envío de SES está suspendido o pausado en la cuenta.';
+  }
+  if (e?.name === 'TooManyRequestsException' || e?.name === 'LimitExceededException') {
+    return 'Se superó la cuota o tasa de envío de SES.';
+  }
+  if (/ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket|timeout/i.test(`${e?.name} ${e?.code} ${msg}`)) {
+    return 'Error de comunicación con SES (red/timeout). Reintenta.';
+  }
+  return undefined;
+}
+
+/**
  * Envía el correo de bienvenida con la contraseña temporal y el enlace de activación
  * usando Amazon SES v2. Nunca lanza: devuelve el resultado y deja trazas en consola
  * (CloudWatch) para poder validar si el correo salió o no.
  *
- * @returns {Promise<{sent:boolean, messageId?:string, reason?:string, error?:string, link:string}>}
+ * @returns {Promise<{sent:boolean, status:'SENT'|'FAILED'|'DISABLED', messageId?:string,
+ *   reason?:string, error?:string, hint?:string, link:string}>}
  */
 export async function sendWelcomeEmail({ to, name, tempPassword }) {
   const link = `${config.email.portalBaseUrl}/activar?email=${encodeURIComponent(to)}`;
   const from = config.email.fromName ? `${config.email.fromName} <${config.email.from}>` : config.email.from;
 
   if (!config.email.enabled) {
-    console.log(`[email] EMAIL_ENABLED=false -> correo NO enviado. to=${to} link=${link}`);
-    return { sent: false, reason: 'disabled', link };
+    const hint = 'EMAIL_ENABLED=false: el envío de correos está desactivado.';
+    logEmail('DISABLED', { to, from: config.email.from, hint });
+    return { sent: false, status: 'DISABLED', reason: 'disabled', hint, link };
   }
 
   const subject = 'Bienvenido a Dáctil';
@@ -80,17 +114,28 @@ export async function sendWelcomeEmail({ to, name, tempPassword }) {
       })
     );
     const messageId = resp?.MessageId;
-    console.log(
-      `[email] OK correo de bienvenida ENVIADO por SES. to=${to} from=${config.email.from} ` +
-        `region=${config.email.sesRegion} messageId=${messageId} ms=${Date.now() - t0}`
-    );
-    return { sent: true, messageId, link };
+    logEmail('SENT', {
+      to,
+      from: config.email.from,
+      region: config.email.sesRegion,
+      messageId,
+      ms: Date.now() - t0
+    });
+    return { sent: true, status: 'SENT', messageId, link };
   } catch (e) {
-    console.error(
-      `[email] ERROR SES al enviar correo de bienvenida. to=${to} from=${config.email.from} ` +
-        `region=${config.email.sesRegion} name=${e.name} message=${e.message} ms=${Date.now() - t0}`
-    );
-    return { sent: false, reason: e.name || 'error', error: e.message, link };
+    const hint = hintFor(e);
+    logEmail('FAILED', {
+      to,
+      from: config.email.from,
+      region: config.email.sesRegion,
+      error_name: e.name,
+      error: e.message,
+      http_status: e.$metadata?.httpStatusCode,
+      request_id: e.$metadata?.requestId,
+      hint,
+      ms: Date.now() - t0
+    });
+    return { sent: false, status: 'FAILED', reason: e.name || 'error', error: e.message, hint, link };
   }
 }
 

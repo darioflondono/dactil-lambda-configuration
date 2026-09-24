@@ -15,6 +15,7 @@ const ROUTES = [
 
   ['GET', /^\/users$/, users.list],
   ['POST', /^\/users$/, users.create],
+  ['POST', /^\/users\/(?<id>[^/]+)\/resend-welcome$/, users.resendWelcome],
   ['GET', /^\/users\/(?<id>[^/]+)$/, users.get],
   ['PUT', /^\/users\/(?<id>[^/]+)$/, users.update],
   ['DELETE', /^\/users\/(?<id>[^/]+)$/, users.remove],
